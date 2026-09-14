@@ -22,6 +22,7 @@ jobs:
 
     - name: Grant execute permission for gradlew
       run: |
+        cd security-lab
         if [ -f "./gradlew" ]; then
           chmod +x gradlew
         else
@@ -29,10 +30,12 @@ jobs:
         fi
 
     - name: Build APK with Gradle
-      run: ./gradlew assembleDebug
+      run: |
+        cd security-lab
+        ./gradlew assembleDebug
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: C2-Debug-APK
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: security-lab/app/build/outputs/apk/debug/app-debug.apk
