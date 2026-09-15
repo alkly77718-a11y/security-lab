@@ -25,16 +25,30 @@ jobs:
 
     - name: Locate Project and Build APK
       run: |
-        PROJECT_DIR=$(find . -name "settings.gradle" -o -name "settings.gradle.kts" | head -n 1 | xargs dirname)
-        if [ -z "$PROJECT_DIR" ]; then
-          echo "Error: Could not find settings.gradle in the repository."
+        set -euo pipefail
+        
+        echo "=== Listing repository files for debugging ==="
+        find . -maxdepth 3
+        
+        # البحث الآمن عن ملف إعدادات أندرويد دون التسبب بانهيار السكربت
+        PROJECT_FILE=$(find . \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print -quit || true)
+        
+        if [ -z "${PROJECT_FILE}" ]; then
+          echo "Error: Could not find settings.gradle or settings.gradle.kts in the repository."
           exit 1
         fi
+        
+        PROJECT_DIR=$(dirname "$PROJECT_FILE")
         echo "Found Android project in directory: $PROJECT_DIR"
         cd "$PROJECT_DIR"
         
-        gradle wrapper --gradle-version 7.6
-        chmod +x ./gradlew
+        # إنشاء الـ Wrapper إذا لم يكن موجوداً
+        if [ ! -f "./gradlew" ]; then
+          echo "No gradlew wrapper found; generating wrapper with system gradle"
+          gradle wrapper --gradle-version 7.6
+          chmod +x ./gradlew
+        fi
+        
         ./gradlew assembleDebug
 
     - name: Upload APK Artifact
