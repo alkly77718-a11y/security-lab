@@ -1,58 +1,64 @@
-name: Build Android APK
+set -euo pipefail
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+echo "=== Listing repository files for debugging ==="
+# increase depth so nested android projects are visible in logs
+find . -maxdepth 6 -type f -printf '%P\n' | sed -n '1,200p'
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+# If a Gradle wrapper already exists at repo root, prefer it
+if [ -f "./gradlew" ]; then
+  echo "Found root gradlew - using repo wrapper"
+  chmod +x ./gradlew
+  ./gradlew assembleDebug
+  exit 0
+fi
 
-    steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+# Safe search for settings.gradle or settings.gradle.kts (stop after first match)
+PROJECT_FILE=$(find . \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print -quit || true)
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
+if [ -n "${PROJECT_FILE}" ]; then
+  PROJECT_DIR=$(dirname "$PROJECT_FILE")
+  echo "Found Android project settings file at: $PROJECT_FILE (project dir: $PROJECT_DIR)"
+  cd "$PROJECT_DIR"
+  if [ ! -f "./gradlew" ]; then
+    echo "No gradlew wrapper found in project dir; generating wrapper with system gradle"
+    gradle wrapper --gradle-version 7.6
+    chmod +x ./gradlew
+  fi
+  ./gradlew assembleDebug
+  exit 0
+fi
 
-    - name: Install System Gradle
-      run: sudo apt-get update && sudo apt-get install -y gradle
+# Try to locate an Android module by searching for 'com.android.application' in build files
+MODULE_FILE=$(grep -R --line-number -m 1 "com.android.application" --include 'build.gradle*' . 2>/dev/null || true)
+if [ -n "$MODULE_FILE" ]; then
+  MODULE_PATH=$(echo "$MODULE_FILE" | cut -d: -f1)
+  MODULE_DIR=$(dirname "$MODULE_PATH")
+  echo "Found Android module in: $MODULE_DIR (matched build file: $MODULE_PATH)"
+  cd "$MODULE_DIR"
+  # create wrapper if needed (so we can use consistent gradle invocation)
+  if [ ! -f "./gradlew" ]; then
+    echo "No gradlew wrapper found in module; generating wrapper with system gradle"
+    gradle wrapper --gradle-version 7.6
+    chmod +x ./gradlew
+  fi
+  ./gradlew assembleDebug || ./gradlew :app:assembleDebug || (echo "Gradle build failed in module" && exit 1)
+  exit 0
+fi
 
-    - name: Locate Project and Build APK
-      run: |
-        set -euo pipefail
-        
-        echo "=== Listing repository files for debugging ==="
-        find . -maxdepth 3
-        
-        # البحث الآمن عن ملف إعدادات أندرويد دون التسبب بانهيار السكربت
-        PROJECT_FILE=$(find . \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print -quit || true)
-        
-        if [ -z "${PROJECT_FILE}" ]; then
-          echo "Error: Could not find settings.gradle or settings.gradle.kts in the repository."
-          exit 1
-        fi
-        
-        PROJECT_DIR=$(dirname "$PROJECT_FILE")
-        echo "Found Android project in directory: $PROJECT_DIR"
-        cd "$PROJECT_DIR"
-        
-        # إنشاء الـ Wrapper إذا لم يكن موجوداً
-        if [ ! -f "./gradlew" ]; then
-          echo "No gradlew wrapper found; generating wrapper with system gradle"
-          gradle wrapper --gradle-version 7.6
-          chmod +x ./gradlew
-        fi
-        
-        ./gradlew assembleDebug
+# Last resort: find any build.gradle(.kts) and try to build from there
+BUILD_FILE=$(find . -name 'build.gradle' -o -name 'build.gradle.kts' -print -quit || true)
+if [ -n "${BUILD_FILE}" ]; then
+  BUILD_DIR=$(dirname "$BUILD_FILE")
+  echo "No settings.gradle found; using first build.gradle found at: $BUILD_FILE (dir: $BUILD_DIR)"
+  cd "$BUILD_DIR"
+  if [ ! -f "./gradlew" ]; then
+    echo "No gradlew wrapper found; generating wrapper with system gradle"
+    gradle wrapper --gradle-version 7.6
+    chmod +x ./gradlew
+  fi
+  ./gradlew assembleDebug || (echo "Gradle build failed from build.gradle directory" && exit 1)
+  exit 0
+fi
 
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: C2-Debug-APK
-        path: '**/build/outputs/apk/debug/*.apk'
+echo "Error: Could not find settings.gradle, settings.gradle.kts, or an Android build.gradle in the repository."
+exit 1
