@@ -20,17 +20,25 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Generate Gradle Wrapper (v7.6)
+    - name: Install System Gradle
+      run: sudo apt-get update && sudo apt-get install -y gradle
+
+    - name: Locate Project and Build APK
       run: |
-        sudo apt-get update && sudo apt-get install -y gradle
+        PROJECT_DIR=$(find . -name "settings.gradle" -o -name "settings.gradle.kts" | head -n 1 | xargs dirname)
+        if [ -z "$PROJECT_DIR" ]; then
+          echo "Error: Could not find settings.gradle in the repository."
+          exit 1
+        fi
+        echo "Found Android project in directory: $PROJECT_DIR"
+        cd "$PROJECT_DIR"
+        
         gradle wrapper --gradle-version 7.6
         chmod +x ./gradlew
-
-    - name: Build APK with Gradle
-      run: ./gradlew assembleDebug
+        ./gradlew assembleDebug
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: C2-Debug-APK
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: '**/build/outputs/apk/debug/*.apk'
